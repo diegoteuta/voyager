@@ -1,4 +1,4 @@
-# public-corpus-pipeline
+# Voyager
 
 A layered, robots-compliant corpus pipeline for public web sources, packaged as an agent
 skill. Bronze keeps the raw HTML and an append-only manifest. Silver strips chrome,
@@ -14,7 +14,7 @@ data/gold/       Markdown + YAML frontmatter + reconciliation report
 ## Install
 
 ```bash
-npx skills add diegoteuta/public-corpus-pipeline
+npx skills add diegoteuta/voyager
 ```
 
 Then ask your agent to build or refresh a corpus. The skill loads on mentions of corpus

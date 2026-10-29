@@ -1,13 +1,16 @@
 ---
-name: public-corpus-pipeline
-description: "Trigger: web scraping corpus, Bronze/Silver/Gold, RAG dataset, robots.txt, public sources. Build a robots-compliant layered corpus pipeline."
+name: voyager
+description: "Trigger: corpus pipeline, web scraping corpus, Bronze/Silver/Gold, RAG dataset, robots.txt. Voyager builds a robots-compliant layered corpus with citations."
 license: MIT
 metadata:
   author: "diegoteuta"
-  version: "1.1"
+  version: "1.2"
 ---
 
-# Public Corpus Pipeline
+# Voyager
+
+A layered corpus pipeline for public web sources: Bronze keeps what the server answered,
+Silver cleans and deduplicates, Gold is citable Markdown.
 
 ## Activation Contract
 
