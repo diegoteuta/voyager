@@ -23,8 +23,6 @@ from urllib.parse import urlparse
 
 import requests
 
-SITE = "https://www.hv.com.co"
-SITEMAP_INDEX = f"{SITE}/sitemap_index.xml"
 NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 SKIP_EXT = (
     ".jpg",
@@ -45,10 +43,11 @@ SKIP_EXT = (
 )
 # Forms and personal-data intake pages: never part of a knowledge corpus.
 DEFAULT_EXCLUDE = (
-    "/envia-tu-hoja-de-vida/",
     "/contacto/",
+    "/contact/",
+    "/careers/",
+    "/envia-tu-hoja-de-vida/",
     "/linea-etica/",
-    "/facturacion-electronica",
 )
 SOFT_404 = re.compile(r"<title>\s*404|>404<|p[aá]gina no encontrada", re.I)
 
@@ -57,7 +56,7 @@ class RobotsPolicy:
     """RFC 9309 matcher with `*` and `$` support.
 
     `urllib.robotparser` treats `*` literally, so it silently allows
-    `Disallow: /*?` and blocks `Allow: /wp-content/uploads/*`. HV uses both.
+    `Disallow: /*?` and blocks `Allow: /wp-content/uploads/*`. Real robots files use both.
     """
 
     def __init__(self, text: str) -> None:
@@ -123,12 +122,13 @@ def build_ua(contact: str) -> str:
     return f"proyecto-ta-corpus/0.1 (+academic corpus; contact: {contact})"
 
 
-def load_robots(session: requests.Session, ua: str, out: Path) -> RobotsPolicy:
-    url = f"{SITE}/robots.txt"
+def load_robots(session: requests.Session, site: str, ua: str, out: Path) -> RobotsPolicy:
+    url = f"{site.rstrip('/')}/robots.txt"
     resp = session.get(url, timeout=20)
     resp.raise_for_status()
     (out / "robots.txt").write_text(
-        f"# snapshot {utc_now()}\n# fetched with {ua}\n\n{resp.text}", encoding="utf-8"
+        f"# snapshot {utc_now()}\n# site: {site}\n# fetched with {ua}\n\n{resp.text}",
+        encoding="utf-8",
     )
     return RobotsPolicy(resp.text)
 
@@ -164,6 +164,7 @@ def collect(
     session: requests.Session,
     robots: RobotsPolicy,
     ua: str,
+    site: str,
     sitemaps: list[str],
     exclude: tuple[str, ...],
     include_pdfs: bool,
@@ -173,7 +174,7 @@ def collect(
     for sitemap in sitemaps:
         urls.extend(sitemap_locs(session, robots, ua, sitemap, seen))
 
-    host = urlparse(SITE).netloc
+    host = urlparse(site).netloc
     allowed: list[str] = []
     blocked_examples: list[str] = []
     reasons = {"blocked": 0, "query": 0, "asset": 0, "excluded": 0, "pdf": 0, "foreign": 0}
@@ -214,9 +215,12 @@ def read_manifest(path: Path) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--site", required=True, help="base URL, e.g. https://example.com")
     ap.add_argument("--out", type=Path, default=Path("data/raw"))
     ap.add_argument("--contact", required=True, help="real email or URL that identifies you")
-    ap.add_argument("--sitemaps", nargs="*", default=[SITEMAP_INDEX])
+    ap.add_argument(
+        "--sitemaps", nargs="*", default=None, help="defaults to <site>/sitemap_index.xml"
+    )
     ap.add_argument("--delay", type=float, default=2.0, help="seconds between requests")
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--max", type=int, default=0, help="stop after N pages (0 = all)")
@@ -228,6 +232,8 @@ def main() -> int:
         print("refusing delay < 1.5s: be polite", file=sys.stderr)
         return 2
 
+    site = args.site.rstrip("/")
+    sitemaps = args.sitemaps or [f"{site}/sitemap_index.xml"]
     ua = build_ua(args.contact)
     out: Path = args.out
     html_dir = out / "html"
@@ -243,11 +249,11 @@ def main() -> int:
         }
     )
 
-    robots = load_robots(session, ua, out)
-    print(f"robots: {SITE}/robots.txt archived")
+    robots = load_robots(session, site, ua, out)
+    print(f"robots: {site}/robots.txt archived")
 
     urls, reasons, blocked_examples = collect(
-        session, robots, ua, args.sitemaps, tuple(args.exclude), args.include_pdfs
+        session, robots, ua, site, sitemaps, tuple(args.exclude), args.include_pdfs
     )
     print(f"collected {len(urls)} allowed URLs; filtered {reasons}")
     if args.max:

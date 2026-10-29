@@ -1,6 +1,8 @@
-# HV site profile (measured 2026-10-29)
+# Reference site profile: a WordPress corporate site
 
-Evidence for every rule in `SKILL.md`. Re-measure before trusting these numbers.
+Evidence for every rule in `SKILL.md`, measured on the reference site used in this course
+(`https://www.hv.com.co`, 2026-10-29). Re-measure before trusting these numbers on another
+site; the patterns (unverified sitemaps, wildcard robots, thin policy pages) generalize.
 
 ## Domain
 
