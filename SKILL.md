@@ -4,7 +4,7 @@ description: "Trigger: corpus pipeline, web scraping corpus, Bronze/Silver/Gold,
 license: MIT
 metadata:
   author: "diegoteuta"
-  version: "1.2"
+  version: "1.3"
 ---
 
 # Voyager

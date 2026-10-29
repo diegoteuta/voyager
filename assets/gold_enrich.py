@@ -89,11 +89,14 @@ def main() -> int:
         for line in (args.raw / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    raw_ok = {
-        r["sha256"]: r
+    ok_rows = [
+        r
         for r in raw_rows
         if r.get("status") == "ok" and r.get("sha256") and r.get("path", "").endswith(".html")
-    }
+    ]
+    # Two URLs can return byte-identical HTML: key by URL, keep sha only as evidence.
+    raw_by_url = {r["url"]: r for r in ok_rows}
+    raw_by_sha = {r["sha256"]: r for r in ok_rows}
     silver = [
         json.loads(line)
         for line in (args.silver / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
@@ -106,7 +109,7 @@ def main() -> int:
     failures: list[str] = []
 
     for row in kept:
-        source = raw_ok.get(row["sha256"])
+        source = raw_by_url.get(row["url"]) or raw_by_sha.get(row["sha256"])
         if not source:
             failures.append(f"sha256 not in bronze: {row['url']}")
             continue
@@ -149,10 +152,10 @@ def main() -> int:
 
     checks = {
         "gold_not_empty": len(gold_rows) > 0,
-        "bronze_ok_equals_kept_plus_dropped": len(raw_ok) == len(silver),
+        "bronze_ok_equals_kept_plus_dropped": len(raw_by_url) == len(silver),
         "silver_kept_reaches_gold": len(kept) == len(gold_rows),
         "unique_source_urls": len({m["source_url"] for m in gold_rows}) == len(gold_rows),
-        "every_sha_in_bronze": all(m["sha256"] in raw_ok for m in gold_rows),
+        "every_sha_in_bronze": all(m["sha256"] in raw_by_sha for m in gold_rows),
         "tokens_positive": all(m["tokens"] > 0 for m in gold_rows),
     }
     passed = all(checks.values()) and not failures
@@ -166,7 +169,7 @@ def main() -> int:
         "| Layer | Count |",
         "|---|---|",
         f"| Bronze rows | {len(raw_rows)} |",
-        f"| Bronze ok (html) | {len(raw_ok)} |",
+        f"| Bronze ok (html) | {len(raw_by_url)} |",
         f"| Silver kept | {len(kept)} |",
         f"| Silver dropped | {len(silver) - len(kept)} |",
         f"| Gold files | {len(gold_rows)} |",
