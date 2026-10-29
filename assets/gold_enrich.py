@@ -21,8 +21,11 @@ import trafilatura
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field, HttpUrl, ValidationError
 
-EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-PHONE = re.compile(r"(?:\+57[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)(?:\d{3}[\s.-]?\d{4})")
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+PHONE = re.compile(
+    r"(?:\+57[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)(?:\d{3}[\s.-]?\d{4})"
+    r"|\b01[\s-]?8000[\s-]?\d{3}[\s-]?\d{0,4}\b"
+)
 PUBLISHED = re.compile(r'property="article:published_time"\s+content="([^"]+)"')
 
 
@@ -106,6 +109,7 @@ def main() -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     gold_rows: list[dict] = []
+    written: set[str] = set()
     failures: list[str] = []
 
     for row in kept:
@@ -141,10 +145,16 @@ def main() -> int:
         record = validated.model_dump(mode="json")
         post = frontmatter.Post(body)
         post.metadata.update(record)
-        (args.out / f"{row['slug']}.md").write_text(
-            frontmatter.dumps(post) + "\n", encoding="utf-8"
-        )
+        filename = f"{row['slug']}.md"
+        (args.out / filename).write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
+        written.add(filename)
         gold_rows.append(record)
+
+    # A page dropped in Silver must not survive in Gold as a stale file.
+    if gold_rows:
+        for stale in args.out.glob("*.md"):
+            if stale.name != "report.md" and stale.name not in written:
+                stale.unlink()
 
     with (args.out / "manifest.jsonl").open("w", encoding="utf-8") as fh:
         for meta in gold_rows:

@@ -68,8 +68,11 @@ Consequences:
 | Excluded (forms, PII) | 8 |
 | Rejected for query string | 2 |
 
-Smoke run on 6 news posts: 6 HTTP 200, 5 kept, 1 dropped as thin, 1295 Gold tokens,
-all reconciliation checks PASS.
+Silver dropped 31 thin pages, 34 chrome-only pages and 55 near-duplicates; 342 documents
+reached Gold with 125,331 tokens and every reconciliation check PASS. Median document is
+~265 tokens: news posts are short.
+
+Smoke run on 6 news posts earlier in the build: 1295 Gold tokens, all checks PASS.
 
 ## Pipeline traps found the hard way
 
@@ -82,3 +85,13 @@ all reconciliation checks PASS.
   not pre-strip and then feed it the leftovers.
 - Do not require more than `--min-chars 400` by default: policy pages whose body is a PDF
   legitimately fall through to the document pipeline.
+- **Product and home pages are image catalogs.** Extraction returns the menu, the newsletter
+  block and the footer, never the products (they are images). 34 pages are dropped by the
+  chrome gate; without it they look like valid text and poison the corpus.
+- **Two URLs can return byte-identical HTML** (18 pairs, mostly `%cc%83` vs `ñ` slugs and
+  pages repeated across sections). Key Bronze by URL and sha only as evidence, or the
+  reconciliation check reports a false failure.
+- **Gold must prune stale files.** When Silver drops a page, a previous Gold file survives
+  and keeps answering as if the source still qualified.
+- Footer PII formats: `servicioalcliente @hv.com.co` (space before `@`) and `01 8000 514 020`
+  freephone numbers. A naive email/phone regex misses both.

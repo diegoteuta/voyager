@@ -40,9 +40,36 @@ FOOTER_LINE = re.compile(
     r"pol[ií]tica de cookies|configuraci[oó]n de cookies)",
     re.I,
 )
+# Menu items, newsletter prompts and footer boilerplate that survive extraction as
+# whole lines. Exact matches only: a paragraph is never just "Contacto".
+CHROME_LINE = re.compile(
+    r"^(compartir|men[uú]|navegaci[oó]n|contacto|inicio|nosotros|prensa|proveedores|"
+    r"presiona enter para buscar.*|suscr[ií]bete al bolet[ií]n.*|"
+    r"s[ií]guenos en nuestras redes|error: no feed found.*|nuestras marcas|"
+    r"l[ií]nea gratuita nacional:?|correo electr[oó]nico:?|direcci[oó]n:?|"
+    r"carrera \d.*)$",
+    re.I,
+)
+# Template chrome: these appear on Elementor pages whose real content is images.
+NEWSLETTER = re.compile(r"bolet[ií]n de clientes", re.I)
+SEARCH_OVERLAY = re.compile(r"presiona enter para buscar", re.I)
+BROKEN_WIDGET = re.compile(r"no feed found", re.I)
 
 # The fallback path has no semantic model, so it needs the structural chrome gone.
 FALLBACK_SELECTORS = (*BOILERPLATE, "nav", "header", "footer", ".breadcrumb")
+
+
+def is_template_chrome(text: str) -> bool:
+    """Detect Elementor template pages whose real content is images, not prose.
+
+    Two markers must agree (newsletter block plus search overlay) so a real article
+    that happens to mention the newsletter survives. A broken Instagram widget is
+    conclusive on its own.
+    """
+    newsletter_and_overlay = (
+        NEWSLETTER.search(text) is not None and SEARCH_OVERLAY.search(text) is not None
+    )
+    return newsletter_and_overlay or BROKEN_WIDGET.search(text) is not None
 
 
 def slugify(url: str, sha: str) -> str:
@@ -58,6 +85,15 @@ def clean_html(html: str) -> str:
     return str(soup)
 
 
+def drop_title_line(text: str, html: str) -> str:
+    """Remove the duplicated `<title>` line that Elementor pages inject as body text."""
+    soup = BeautifulSoup(html, "lxml")
+    title = soup.title.get_text(strip=True) if soup.title else ""
+    if not title:
+        return text
+    return "\n".join(line for line in text.splitlines() if line.strip() != title)
+
+
 def extract(html: str, url: str) -> str:
     # trafilatura is boilerplate-aware: give it the raw HTML.
     text = trafilatura.extract(
@@ -67,10 +103,10 @@ def extract(html: str, url: str) -> str:
         include_comments=False,
         include_tables=True,
     )
-    if text and len(text) >= 200:
-        return text
-    # Fallback for pages it rejects: strip structural chrome, keep the text.
-    return BeautifulSoup(clean_html(html), "lxml").get_text("\n", strip=True)
+    if not text or len(text) < 200:
+        # Fallback for pages it rejects: strip structural chrome, keep the text.
+        text = BeautifulSoup(clean_html(html), "lxml").get_text("\n", strip=True)
+    return drop_title_line(text, html)
 
 
 def normalize(text: str) -> str:
@@ -81,7 +117,7 @@ def normalize(text: str) -> str:
         line = re.sub(r"[ \t]+", " ", raw).strip()
         if len(line) < 3 or not re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ0-9]", line):
             continue
-        if FOOTER_LINE.search(line):
+        if FOOTER_LINE.search(line) or CHROME_LINE.match(line):
             continue
         lines.append(line)
     out = "\n".join(lines)
@@ -114,17 +150,24 @@ def main() -> int:
 
     lsh = MinHashLSH(threshold=args.threshold, num_perm=128)
     out_rows: list[dict] = []
-    kept = thin = dups = 0
+    kept = thin = dups = chrome = 0
 
     for row in ok:
         slug = slugify(row["url"], row["sha256"])
         html = (args.raw / row["path"]).read_text(encoding="utf-8", errors="ignore")
-        text = normalize(extract(html, row["url"]))
+        raw_text = extract(html, row["url"])
+        is_chrome = is_template_chrome(raw_text)
+        text = normalize(raw_text)
         base = {"url": row["url"], "sha256": row["sha256"], "slug": slug}
 
         if len(text) < args.min_chars:
             out_rows.append({**base, "chars": len(text), "dropped": "thin"})
             thin += 1
+            continue
+
+        if is_chrome:
+            out_rows.append({**base, "chars": len(text), "dropped": "chrome"})
+            chrome += 1
             continue
 
         mh = MinHash(num_perm=128)
@@ -151,6 +194,7 @@ def main() -> int:
         "bronze_ok": len(ok),
         "kept": kept,
         "thin": thin,
+        "chrome": chrome,
         "duplicates": dups,
         "out": str(args.out),
     }
